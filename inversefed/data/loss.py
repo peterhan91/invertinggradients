@@ -112,3 +112,35 @@ class Classification(Loss):
         else:
             value = (x.data.argmax(dim=1) == y).sum().float() / y.shape[0]
             return value.detach(), name, format
+
+
+class BCE_Classification(Loss):
+    """A classical NLL loss for classification. Evaluation has the softmax baked in.
+
+    The minimized criterion is cross entropy, the actual metric is total accuracy.
+    """
+
+    def __init__(self):
+        """Init with torch MSE."""
+        self.loss_fn = torch.nn.BCELoss(weight=None, size_average=None, reduce=None, reduction='mean')
+        self.m = torch.nn.Sigmoid()
+
+    def __call__(self, x=None, y=None):
+        """Return l(x, y)."""
+        name = 'BinaryCrossEntropy'
+        format = '1.5f'
+        if x is None:
+            return name, format
+        else:
+            value = self.loss_fn(self.m(x), y.float())
+            return value, name, format
+
+    def metric(self, x=None, y=None):
+        """The actually sought metric."""
+        name = 'Accuracy'
+        format = '6.2%'
+        if x is None:
+            return name, format
+        else:
+            value = (x.data.argmax(dim=1) == y).sum().float() / y.shape[0]
+            return value.detach(), name, format

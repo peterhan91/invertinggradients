@@ -10,10 +10,11 @@ import os
 from ..consts import *
 
 from .data import _build_bsds_sr, _build_bsds_dn
-from .loss import Classification, PSNR
+from .loss import BCE_Classification, Classification, PSNR
+from .patch_dataset import PatchDataset
 
 
-def construct_dataloaders(dataset, defs, data_path='~/data', shuffle=True, normalize=True):
+def construct_dataloaders(dataset, defs, data_path='~/data', csv_path=None, shuffle=True, normalize=True):
     """Return a dataloader with given dataset and augmentation, normalize data?."""
     path = os.path.expanduser(data_path)
 
@@ -31,6 +32,9 @@ def construct_dataloaders(dataset, defs, data_path='~/data', shuffle=True, norma
         loss_fn = Classification()
     elif dataset == 'ImageNet':
         trainset, validset = _build_imagenet(path, defs.augmentations, normalize)
+        loss_fn = Classification()
+    elif dataset =='CheXpert':
+        trainset, validset = _build_chexpert(path, csv_path, defs.augmentations, normalize=False)
         loss_fn = Classification()
     elif dataset == 'BSDS-SR':
         trainset, validset = _build_bsds_sr(path, defs.augmentations, normalize, upscale_factor=3, RGB=True)
@@ -201,6 +205,41 @@ def _build_imagenet(data_path, augmentations=True, normalize=True):
 
     return trainset, validset
 
+
+def _build_chexpert(data_path, csv_path, augmentations=True, normalize=True):
+    """Define ImageNet with everything considered."""
+    # Load data
+    trainset = PatchDataset(path_to_images=data_path, csv_path=csv_path, fold='train', transform=transforms.ToTensor())
+    validset = PatchDataset(path_to_images=data_path, csv_path=csv_path, fold='valid', transform=transforms.ToTensor())
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std = [0.229, 0.224, 0.225]
+    
+    if imagenet_mean is None:
+        data_mean, data_std = _get_meanstd(trainset)
+    else:
+        data_mean, data_std = imagenet_mean, imagenet_std
+
+    # Organize preprocessing
+    transform = transforms.Compose([
+        transforms.Resize(224),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(data_mean, data_std) if normalize else transforms.Lambda(lambda x : x)])
+    
+    if augmentations:
+        transform_train = transforms.Compose([
+            transforms.Resize(256),
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(data_mean, data_std) if normalize else transforms.Lambda(lambda x : x)])
+        trainset.transform = transform_train
+    else:
+        trainset.transform = transform
+    
+    validset.transform = transform
+
+    return trainset, validset
 
 def _get_meanstd(dataset):
     cc = torch.cat([trainset[i][0].reshape(3, -1) for i in range(len(trainset))], dim=1)
